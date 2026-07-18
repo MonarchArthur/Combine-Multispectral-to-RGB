@@ -25,12 +25,19 @@ class Job:
     name: str
     input_dir: Path
     output_dir: Path
+    panel_input_dir: Path | None = None
     panel_stems: tuple[str, ...] = ()
     manual_panel_roi: tuple[int, int, int, int] | None = None
 
 
 JOBS = (
-    Job("000", ROOT / "000", OUTPUT_ROOT / "000"),
+    Job(
+        "000",
+        ROOT / "000",
+        OUTPUT_ROOT / "000",
+        panel_input_dir=ROOT / "001",
+        panel_stems=("IMG_0353",),
+    ),
     Job(
         "001",
         ROOT / "001",
@@ -110,6 +117,8 @@ def run_job(job: Job) -> int:
         str(job.output_dir),
     ]
     if job.panel_stems:
+        if job.panel_input_dir:
+            command.extend(["--panel-input", str(job.panel_input_dir)])
         command.extend(["--panel-stems", *job.panel_stems])
     if job.manual_panel_roi:
         command.extend(["--manual-panel-roi", *(str(v) for v in job.manual_panel_roi)])

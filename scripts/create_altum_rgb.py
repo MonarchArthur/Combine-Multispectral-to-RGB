@@ -34,6 +34,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", required=True, type=Path, help="Folder with Altum TIFFs.")
     parser.add_argument("--output", required=True, type=Path, help="Output folder.")
     parser.add_argument(
+        "--panel-input",
+        type=Path,
+        help="Folder containing panel TIFFs when panel frames are outside --input.",
+    )
+    parser.add_argument(
         "--panel-stems",
         nargs="*",
         default=[],
@@ -315,6 +320,7 @@ def save_panel_check(
 def main() -> None:
     args = parse_args()
     input_dir = args.input
+    panel_input_dir = args.panel_input or input_dir
     output_dir = args.output
     tif_dir = output_dir / "tif_16bit_rgb"
     png_dir = output_dir / "png_preview"
@@ -324,6 +330,7 @@ def main() -> None:
 
     manual_roi = tuple(args.manual_panel_roi) if args.manual_panel_roi else None
     processor = AltumProcessor(input_dir)
+    panel_processor = AltumProcessor(panel_input_dir)
 
     stems = complete_visible_stems(input_dir)
     exclude = set(args.exclude_stems) | set(args.panel_stems)
@@ -331,9 +338,9 @@ def main() -> None:
     if not output_stems:
         raise RuntimeError("No complete visible-band captures to process.")
 
-    panel_scale, panel_rows = estimate_panel_scale(processor, args.panel_stems, manual_roi)
+    panel_scale, panel_rows = estimate_panel_scale(panel_processor, args.panel_stems, manual_roi)
     if args.panel_stems:
-        save_panel_check(processor, args.panel_stems[0], manual_roi, output_dir / "panel_checks")
+        save_panel_check(panel_processor, args.panel_stems[0], manual_roi, output_dir / "panel_checks")
 
     # Estimate fixed red/blue -> green alignment from representative output frames.
     sample_indices = np.linspace(0, len(output_stems) - 1, min(6, len(output_stems))).round().astype(int)
@@ -410,6 +417,9 @@ def main() -> None:
 
 Input:
   {input_dir}
+
+Panel input:
+  {panel_input_dir}
 
 Outputs:
   16-bit RGB TIFFs: {tif_dir}
