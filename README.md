@@ -1,8 +1,7 @@
 # Combine Multi
 
-Create RGB surrogate images from single-band MicaSense Altum multispectral TIFFs.
-
-This project is for workflows where downstream software expects normal RGB images, but the source data comes from a MicaSense Altum camera as separate band files. The converter uses the Altum visible bands:
+Create RGB images from single-band MicaSense Altum multispectral TIFFs.
+This project is for workflows where Plot Phenix expects normal-ish RGB images, but the source data comes from a MicaSense Altum camera as separate band files. The converter uses the Altum visible bands:
 
 - Red: band 3
 - Green: band 2
@@ -35,7 +34,7 @@ For each image stem, such as `IMG_0000`, the script looks for the visible bands 
 8. Crops the aligned image to the shared area where all three RGB bands overlap.
 9. Writes 16-bit RGB TIFF files.
 10. Optionally writes 8-bit PNG previews.
-11. Writes a per-run `README.txt` describing the processing, crop, panel measurements, and alignment transforms.
+11. Then crops image bounds that don't contain all three bands. (this happens because of slight offset in sensors)
 
 ## Repository Layout
 
@@ -51,7 +50,7 @@ For each image stem, such as `IMG_0000`, the script looks for the visible bands 
 `-- README.md                     This guide
 ```
 
-Large input and output folders are ignored by Git through `.gitignore`, so this repository is mainly the processing script and documentation. Keep raw flight folders beside `scripts/` when using the example paths below. Historical output folders may also be present locally if previous conversions were kept.
+Large input and output folders are ignored by Git, so this repository is mainly the processing script and documentation. Keep raw flight folders beside `scripts/` when using the example paths below. Historical output folders may also be present locally if previous conversions were kept.
 
 ## Requirements
 
@@ -70,12 +69,6 @@ One clean Conda setup is:
 conda create -n altum-rgb python=3.11
 conda activate altum-rgb
 pip install numpy opencv-python tifffile pillow
-```
-
-If you already have the local ML Conda environment used on this machine, commands may look like:
-
-```powershell
-& 'D:\Conda\envs\ML\python.exe' 'D:\Play\Combine Multi\scripts\create_altum_rgb.py' --help
 ```
 
 ## Input Data
@@ -129,9 +122,9 @@ Omit `--preview` if you only want the 16-bit TIFF outputs.
 
 ## Panel Calibration
 
-Panel normalization is optional. When you provide panel stems, the script measures the panel in bands `1`, `2`, and `3`, then uses the median panel signal to normalize the output channels relative to each other.
+Panel normalization is optional. When you provide panel stems, the script measures the panel in bands `1`, `2`, and `3`, then uses the median panel signal to normalize the output channels relative to each other. However, its better to just include the panel calibration frames if present. The median panel signal doens't work very well.
 
-Use panel frames from the same input folder:
+Use panel calibration frames from the same input folder:
 
 ```powershell
 & 'D:\Conda\envs\ML\python.exe' 'D:\Play\Combine Multi\scripts\create_altum_rgb.py' `
@@ -179,7 +172,7 @@ When panel stems are supplied, the script writes a panel check image under:
 <output>/panel_checks/
 ```
 
-Open that image and confirm the rectangle is covering only the reflectance panel, not shadows, frame edges, labels, soil, vegetation, or sky.
+Open that image and confirm the rectangle is covering only the reflectance panel, not shadows, frame edges, labels, soil, vegetation, or sky. The ROI is usually includeded in the metadata. Before a drone flight the program ususally forces you to calibrate reflectance and determines the ROI.
 
 ## Command-Line Options
 
@@ -274,7 +267,7 @@ The script automatically crops those edges before saving the TIFFs and PNG previ
 - These outputs are RGB surrogates, not normal camera photographs.
 - Panel normalization is relative unless official per-band panel reflectance values are incorporated.
 - The script does not currently use Altum red edge, near infrared, or thermal bands.
-- Red and blue are aligned to green with one fixed affine transform estimated from sample frames; difficult scenes can still show edge color fringes.
+- Red and blue are aligned to green with one fixed affine transform estimated from sample frames. Difficult scenes can still show edge color fringes.
 - The output images are slightly smaller than the raw bands because edge pixels without all three bands are cropped away.
 - The global 16-bit scale is computed per run, so images from different runs may not be directly comparable unless processed together with the same settings.
 
@@ -294,7 +287,7 @@ Check `<output>/panel_checks/`. The ROI should cover only the flat panel surface
 
 Output colors look unusual.
 
-That can be expected. The output is made from multispectral bands and corrected/scaled for consistency, not rendered like a consumer RGB camera.
+That can be expected. The output is made from multispectral bands and corrected/scaled for consistency, not rendered like a consumer RGB camera. In my experience they look more saturated than normal RGB images. If they have a green tint, your calibration is off.
 
 Python cannot import `cv2`, `numpy`, `tifffile`, or `PIL`.
 
@@ -314,5 +307,3 @@ For repeatable work, keep a note of:
 - manual ROI values, if used
 - whether PNG previews were written
 - any stems excluded because they were calibration images, test captures, blurry, or incomplete
-
-The generated `<output>/README.txt` already captures most of this information for each conversion run.
