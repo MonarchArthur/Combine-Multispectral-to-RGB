@@ -286,6 +286,64 @@ def warp_apply(arr: np.ndarray, warp: np.ndarray, shape: tuple[int, int]) -> np.
     )
 
 
+def warp_valid_mask(shape: tuple[int, int], warp: np.ndarray) -> np.ndarray:
+    mask = np.ones(shape, dtype=np.float32)
+    warped = cv2.warpAffine(
+        mask,
+        warp,
+        (shape[1], shape[0]),
+        flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+    return warped > 0.999
+
+
+def largest_true_rectangle(mask: np.ndarray) -> tuple[int, int, int, int]:
+    """Return left, top, right, bottom for the largest all-true rectangle."""
+    height, width = mask.shape
+    heights = [0] * width
+    best_area = 0
+    best_box = (0, 0, width, height)
+
+    for y in range(height):
+        row = mask[y]
+        for x in range(width):
+            heights[x] = heights[x] + 1 if row[x] else 0
+
+        stack: list[int] = []
+        for x in range(width + 1):
+            current_height = heights[x] if x < width else 0
+            while stack and current_height < heights[stack[-1]]:
+                rect_height = heights[stack.pop()]
+                left = stack[-1] + 1 if stack else 0
+                rect_width = x - left
+                area = rect_height * rect_width
+                if area > best_area:
+                    best_area = area
+                    best_box = (left, y - rect_height + 1, x, y + 1)
+            stack.append(x)
+
+    if best_area == 0:
+        raise RuntimeError("Could not find a shared crop where all three RGB bands overlap.")
+    return best_box
+
+
+def estimate_overlap_crop(
+    shape: tuple[int, int],
+    red_warp: np.ndarray,
+    blue_warp: np.ndarray,
+) -> tuple[int, int, int, int]:
+    red_valid = warp_valid_mask(shape, red_warp)
+    blue_valid = warp_valid_mask(shape, blue_warp)
+    return largest_true_rectangle(red_valid & blue_valid)
+
+
+def crop_apply(arr: np.ndarray, crop: tuple[int, int, int, int]) -> np.ndarray:
+    left, top, right, bottom = crop
+    return arr[top:bottom, left:right]
+
+
 def to_uint16(arr: np.ndarray, high: float) -> np.ndarray:
     return (np.clip(arr / high, 0, 1) * 65535 + 0.5).astype(np.uint16)
 
@@ -365,6 +423,14 @@ def main() -> None:
     red_warp = np.median(np.stack(r_warps), axis=0).astype(np.float32) if r_warps else np.eye(2, 3, dtype=np.float32)
     blue_warp = np.median(np.stack(b_warps), axis=0).astype(np.float32) if b_warps else np.eye(2, 3, dtype=np.float32)
 
+    first_green, _ = processor.corrected_signal(output_stems[0], "2")
+    crop_box = estimate_overlap_crop(first_green.shape, red_warp, blue_warp)
+    crop_left, crop_top, crop_right, crop_bottom = crop_box
+    crop_width = crop_right - crop_left
+    crop_height = crop_bottom - crop_top
+    del first_green
+    gc.collect()
+
     # One fixed global scale for all outputs in this run.
     samples = []
     for stem in output_stems:
@@ -373,6 +439,9 @@ def main() -> None:
         blue = normalized_band(processor, stem, "1", panel_scale)
         red = warp_apply(red, red_warp, green.shape)
         blue = warp_apply(blue, blue_warp, green.shape)
+        red = crop_apply(red, crop_box)
+        green = crop_apply(green, crop_box)
+        blue = crop_apply(blue, crop_box)
         for band in (red, green, blue):
             valid = band[np.isfinite(band) & (band > 0)]
             if valid.size:
@@ -391,12 +460,16 @@ def main() -> None:
         blue = normalized_band(processor, stem, "1", panel_scale)
         red = warp_apply(red, red_warp, green.shape)
         blue = warp_apply(blue, blue_warp, green.shape)
+        red = crop_apply(red, crop_box)
+        green = crop_apply(green, crop_box)
+        blue = crop_apply(blue, crop_box)
         rgb16 = np.dstack([to_uint16(red, global_high), to_uint16(green, global_high), to_uint16(blue, global_high)])
 
         description = (
             "MicaSense Altum RGB surrogate. R=channel3, G=channel2, B=channel1. "
             "Black/vignette/exposure/gain/DLS irradiance corrected, panel-normalized if panel was supplied, "
-            "and red/blue aligned to green. Not true sRGB and not absolute reflectance without official panel values."
+            "red/blue aligned to green, and cropped to the shared RGB overlap. "
+            "Not true sRGB and not absolute reflectance without official panel values."
         )
         tifffile.imwrite(
             tif_dir / f"{stem}_RGB.tif",
@@ -449,12 +522,17 @@ Processing:
   4. XMP/DLS irradiance normalization.
   5. Panel ROI normalization if panel stems were supplied.
   6. Red and blue aligned to green using affine ECC alignment.
-  7. One fixed global scale for this run: 99.8 percentile {global_high:.8g} -> 65535.
+  7. Edges cropped to the shared area where red, green, and blue all overlap.
+  8. One fixed global scale for this run: 99.8 percentile {global_high:.8g} -> 65535.
+
+Crop:
+  left={crop_left}, top={crop_top}, right={crop_right}, bottom={crop_bottom}
+  output_size={crop_width}x{crop_height}
 
 Limitations:
   - This is a multispectral-derived RGB surrogate, not a normal sRGB camera photo.
   - Without official per-band panel reflectance/albedo values, panel normalization is relative.
-  - Edges can show color fringes after alignment; crop borders if your software is sensitive to this.
+  - Small color fringes can remain when a scene is difficult to align.
 
 Panel measurements:
 {chr(10).join(panel_rows)}
