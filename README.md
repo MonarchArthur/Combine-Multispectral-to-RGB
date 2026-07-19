@@ -46,6 +46,7 @@ For each image stem, such as `IMG_0000`, the script looks for the visible bands 
 |-- 001/                          Example/input Altum capture folder
 |-- flight/                       Example/input Altum capture folder
 |-- Converted/                    Suggested parent folder for new outputs
+|-- samples/converted/            Small example output previews
 |-- copy_*.log                    Robocopy logs from copying source data
 `-- README.md                     This guide
 ```
@@ -222,6 +223,16 @@ If `--preview` is used, preview PNGs are written to:
 ```
 
 The previews are 8-bit images with display normalization and a simple gamma adjustment. Use them for quick visual review, not quantitative analysis.
+
+## Sample Converted Outputs
+
+Small downscaled PNG samples are included under `samples/converted/` to show what the converted RGB output looks like on GitHub:
+
+- [`000_IMG_0100_sample.png`](samples/converted/000_IMG_0100_sample.png)
+- [`001_IMG_0280_sample.png`](samples/converted/001_IMG_0280_sample.png)
+- [`flight_IMG_0300_sample.png`](samples/converted/flight_IMG_0300_sample.png)
+
+These are preview images derived from cropped 16-bit RGB TIFF outputs. They are useful for visual expectations, not quantitative analysis.
 
 Each run also writes:
 
