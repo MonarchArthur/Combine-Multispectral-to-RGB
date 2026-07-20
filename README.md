@@ -1,4 +1,4 @@
-# Combine Multi
+# Combine Multispectral to RGB
 
 Create RGB images from single-band MicaSense Altum multispectral TIFFs.
 This project is for workflows where Plot Phenix expects normal-ish RGB images, but the source data comes from a MicaSense Altum camera as separate band files. The converter uses the Altum visible bands:
